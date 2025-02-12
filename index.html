@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>끊어 읽기 학습 (그림 1)</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      line-height: 1.8;
+    }
+    .word {
+      margin: 0 3px;
+    }
+    .checkbox {
+      margin: 0 5px 0 0;
+    }
+    #checkButton, #nextButton {
+      margin: 10px 8px 0 0;
+    }
+    .correct {
+      color: green;
+      font-weight: bold;
+    }
+    .incorrect {
+      color: red;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<h1>끊어 읽기 학습 (그림 1)</h1>
+<p>아래 문장을 끊어 읽기 해 보세요. 원래는 슬래시(<code>/</code>)가 있던 위치가 정답(끊어 읽기 지점)이었습니다.</p>
+
+<div id="exercise"></div>
+
+<button id="checkButton">체크하기</button>
+<button id="nextButton" style="display:none;">다음 문장</button>
+
+<div id="feedback"></div>
+
+<script>
+// --------------------------------------------------
+// 1. [자료] 그림 1 전체 텍스트: 슬래시(/)로 끊어 읽기 정답 위치를 표시
+// --------------------------------------------------
+const rawLines = [
+  "스트레스는/힘든 상황으로 인해 발생하는 걱정이나/정신적 긴장 상태를 말한다.",
+  "스트레스는/인간의 자연스러운 반응으로/모든 사람은/어느 정도의 스트레스를 늘 경험한다.",
+  "스트레스는/때때로 이로울 수 있지만/너무 오랫동안 지속되면/몸 안의 세포와 장기에 큰 피해를 줄 수 있다.",
+  "특히/만성적인 스트레스는/우리 몸의 면역기능을 떨어뜨리기 때문에/건강하기 위해서는/스트레스를 조절해야 한다.",
+  "그렇다면/어떻게 스트레스를 관리할 수 있을까?",
+  "우선/스트레스를 예방하는 것이 중요하며/전문가들은/규칙적인 생활습관이 스트레스 예방에 도움이 된다고/입을 모아 말한다.",
+  "우린 몸을/일정한 생체 리듬을 따르며/수면, 식사, 활동 시간이 일정하면/신체 리듬이 안정되고/그에 따라 스트레스 호르몬도 균형이 유지된다.",
+  "규칙적인 생활의 또 다른 이점은/자기 시간에 대한 통제력이다.",
+  "어떤 결정을 급하게 내려야 하거나 시간이 촉박할 때/사람들은/스트레스를 받는다.",
+  "평상시에/먹고, 자고, 일하는 시간이 고정적으로 계획되어 있으면/이런 불확실성을 제거할 수 있다.",
+  "만약/스트레스를 받았다면/바로 해소하는 것도 중요하다.",
+  "스트레스를 푸는 방법은/사람마다 차이가 크기 때문에/정답은 없다.",
+  "어떤 사람은/친구들을 만나서 이야기를 나누는 것을 선호하고/어떤 사람은/혼자서 명상하며 안정감을 찾기도 한다.",
+  "자신이 즐거움과 보람을 느끼고/하고 나서도 죄책감이 들지 않는 활동을/취미로 만들어 둘 수도 있다.",
+  "자신이 스스로 해결하기 어려우면/전문가의 도움을 받는 것도 필요하다."
+];
+
+// --------------------------------------------------
+// 2. [파싱 로직] 슬래시(/)를 기준으로 '정답 위치'를 계산하고
+//    화면에는 모든 '단어' 사이에 체크박스를 배치하기 위한 데이터 구성
+// --------------------------------------------------
+function parseLine(rawLine) {
+  // 슬래시 기준으로 나눈 덩어리들
+  // 예: "스트레스는/힘든 상황..." => ["스트레스는", "힘든 상황...", ...]
+  const slashChunks = rawLine.split('/');
+
+  // 실제로 화면에 표시할 '단어'들을 담을 배열
+  const words = [];
+
+  // slash가 있던 위치(단어 인덱스)들을 저장 (정답)
+  // 예: [3, 7] 이면, 3번 단어 뒤와 7번 단어 뒤가 원래 슬래시 위치
+  const correctBreakPositions = [];
+
+  // 현재까지 단어가 몇 개인지 추적
+  let wordCount = 0;
+
+  // slashChunks를 순회하면서, 각 덩어리를 다시 공백으로 분리해 words에 추가
+  slashChunks.forEach((chunk, idx) => {
+    // chunk를 공백 기준으로 쪼개서 단어 단위로 담는다
+    const chunkWords = chunk.trim().split(/\s+/).filter(Boolean); // 빈 문자열 방지
+    words.push(...chunkWords);
+
+    // 마지막 조각이 아니라면 => 슬래시로 구분됐다는 의미이므로
+    // '여기서 끊는다'라는 위치를 기록 (단어가 추가된 직후 위치)
+    if (idx < slashChunks.length - 1) {
+      wordCount += chunkWords.length;
+      correctBreakPositions.push(wordCount);
+    } else {
+      // 마지막 조각까지 추가 후에도 wordCount를 갱신
+      wordCount += chunkWords.length;
+    }
+  });
+
+  return { words, correctBreakPositions };
+}
+
+// --------------------------------------------------
+// 3. [구현] 문장을 하나씩 보여주고, 체크박스로 끊어읽기 위치 선택 후 확인
+// --------------------------------------------------
+let currentLineIndex = 0;               // 현재 몇 번째 문장인지
+let currentLineWords = [];              // 현재 문장의 '단어' 배열
+let currentLineBreakPositions = [];     // 현재 문장의 정답(슬래시 위치)
+
+function loadLine(index) {
+  const { words, correctBreakPositions } = parseLine(rawLines[index]);
+  currentLineWords = words;
+  currentLineBreakPositions = correctBreakPositions;
+
+  // #exercise 영역에 단어+체크박스 생성
+  const exerciseDiv = document.getElementById("exercise");
+  exerciseDiv.innerHTML = "";  // 초기화
+
+  // 예) 단어가 10개라면, 단어 사이 체크박스는 9개 + (마지막 단어 뒤에도 넣을지 여부 결정)
+  // 요구사항상 "모든 단어 사이"에 넣으려면 => 단어가 N개면 N-1개 넣으면 되지만
+  // "모든 '사이'에"를 엄밀히 해석하면 마지막 뒤도 가능.
+  // 여기서는 "단어 n개" => "체크박스 n-1개"만 넣는 예시.
+  // 필요하다면 마지막 단어 뒤에도 체크박스 추가 가능.
+
+  for (let i = 0; i < words.length; i++) {
+    // 단어 추가
+    const span = document.createElement("span");
+    span.className = "word";
+    span.textContent = words[i];
+    exerciseDiv.appendChild(span);
+
+    // 마지막 단어가 아니라면(즉 i < words.length - 1) 체크박스 추가
+    if (i < words.length - 1) {
+      const label = document.createElement("label");
+      label.className = "checkbox";
+      // 체크박스 input 생성
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.name = "break"; // 나중에 querySelectorAll("input[name='break']")로 찾을 때 편함
+      label.appendChild(input);
+
+      exerciseDiv.appendChild(label);
+    }
+  }
+
+  // 피드백 초기화 / 버튼 상태
+  document.getElementById("feedback").innerHTML = "";
+  document.getElementById("nextButton").style.display = "none";
+}
+
+// '체크하기' 버튼을 눌렀을 때
+function checkAnswer() {
+  // 현재 문장에 있는 체크박스들
+  const checkboxes = document.querySelectorAll("input[name='break']");
+  
+  // 사용자가 체크한 위치 (0-based)
+  // (예) i번째 체크박스가 체크되어 있다면 => '단어 i와 단어 i+1 사이에 끊었다'는 의미
+  const userBreakPositions = [];
+  checkboxes.forEach((cb, i) => {
+    if (cb.checked) {
+      // i번째 체크박스는 '단어 i와 i+1 사이'
+      // 즉 단어 인덱스 i+1 위치에서 끊는 것과 동일
+      userBreakPositions.push(i+1);
+    }
+  });
+
+  // 피드백
+  const feedbackDiv = document.getElementById("feedback");
+
+  // 1) 개수 비교
+  if (userBreakPositions.length !== currentLineBreakPositions.length) {
+    feedbackDiv.innerHTML = "<p class='incorrect'>틀렸습니다! 다시 생각해 보세요.</p>";
+    return;
+  }
+
+  // 2) 실제 위치도 하나씩 비교
+  for (let i = 0; i < userBreakPositions.length; i++) {
+    if (userBreakPositions[i] !== currentLineBreakPositions[i]) {
+      feedbackDiv.innerHTML = "<p class='incorrect'>틀렸습니다! 다시 시도해보세요.</p>";
+      return;
+    }
+  }
+
+  // 모두 일치 => 정답
+  feedbackDiv.innerHTML = "<p class='correct'>정답입니다!</p>";
+  document.getElementById("nextButton").style.display = "inline";
+}
+
+// '다음 문장' 버튼
+function showNextLine() {
+  currentLineIndex++;
+  if (currentLineIndex < rawLines.length) {
+    loadLine(currentLineIndex);
+  } else {
+    // 모든 문장 완료
+    document.getElementById("exercise").innerHTML = "<p>모든 문장을 완료했습니다! 수고했어요.</p>";
+    document.getElementById("checkButton").style.display = "none";
+    document.getElementById("nextButton").style.display = "none";
+    document.getElementById("feedback").innerHTML = "";
+  }
+}
+
+// 초기 설정
+document.getElementById("checkButton").addEventListener("click", checkAnswer);
+document.getElementById("nextButton").addEventListener("click", showNextLine);
+loadLine(currentLineIndex);
+</script>
+
+</body>
+</html>
